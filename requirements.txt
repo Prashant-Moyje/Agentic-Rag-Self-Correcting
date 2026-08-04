@@ -1,0 +1,14 @@
+langchain
+langchain-community
+langchain-openai
+langchain-huggingface
+langchain-ollama
+langgraph
+pinecone-client>=5.0.0
+langchain-pinecone
+pymilvus
+langchain-milvus
+pypdf
+sentence-transformers
+python-dotenv
+streamlit
