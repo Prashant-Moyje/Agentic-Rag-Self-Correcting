@@ -58,15 +58,18 @@ def get_milvus_store():
 
 
 def _sanitize_for_milvus(chunks: List[Document]) -> List[Document]:
-    """Milvus reserves certain metadata field names (e.g. 'text') internally.
-    Strip any colliding keys so add_documents doesn't error out."""
-    reserved = {"text", "pk", "vector"}
+    """Milvus locks in a fixed schema from the first document's metadata
+    fields. Different PDFs have different metadata (author, producer, etc.),
+    which causes schema mismatches on later ingestions. Fix: always send
+    the exact same small, consistent set of fields, regardless of source PDF."""
     cleaned = []
     for doc in chunks:
-        new_metadata = {k: v for k, v in doc.metadata.items() if k not in reserved}
+        new_metadata = {
+            "source": str(doc.metadata.get("source", "")),
+            "page": int(doc.metadata.get("page", 0)),
+        }
         cleaned.append(Document(page_content=doc.page_content, metadata=new_metadata))
     return cleaned
-
 
 def upsert_documents(chunks: List[Document]) -> None:
     """Embed and write the same chunks into both Pinecone and Milvus."""

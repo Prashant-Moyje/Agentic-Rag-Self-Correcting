@@ -10,14 +10,13 @@ demo the "agentic" behavior live, not just show a final answer box.
 """
 import os
 import sys
+import tempfile
 
 import streamlit as st
 
-# Streamlit runs this file as a standalone script, not as part of the
-# "src" package, so relative imports won't work. Add the project root
-# (parent of this file's directory) to sys.path and import absolutely.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from src.graph import rag_graph  # noqa: E402
+from src.ingestion import ingest  # noqa: E402
 
 st.set_page_config(page_title="Agentic RAG", page_icon="🔎", layout="wide")
 
@@ -39,7 +38,33 @@ with st.sidebar:
         "hallucinating."
     )
     st.divider()
-    st.caption("Make sure you've run `python -m src.ingestion --pdf ...` first.")
+    st.caption(
+        "Runs locally via Ollama -- no cloud LLM cost. Upload a PDF below "
+        "or use one already ingested via the CLI."
+    )
+
+st.subheader("Add a document")
+
+uploaded_file = st.file_uploader("Upload a PDF to add to the knowledge base", type=["pdf"])
+ingest_clicked = st.button("Ingest this PDF", disabled=uploaded_file is None)
+
+if ingest_clicked and uploaded_file is not None:
+    with tempfile.NamedTemporaryFile(delete=False, suffix=".pdf") as tmp:
+        tmp.write(uploaded_file.getvalue())
+        tmp_path = tmp.name
+
+    with st.spinner(f"Ingesting {uploaded_file.name} into Pinecone + Milvus..."):
+        try:
+            ingest(tmp_path)
+            st.success(f"{uploaded_file.name} ingested successfully. You can now ask questions about it below.")
+        except Exception as e:
+            st.error(f"Ingestion failed: {e}")
+        finally:
+            os.remove(tmp_path)
+
+st.divider()
+
+st.subheader("Ask a question")
 
 question = st.text_input(
     "Ask a question about your ingested documents",
