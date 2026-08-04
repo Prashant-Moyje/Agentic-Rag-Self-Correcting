@@ -1,222 +1,170 @@
-\# Agentic RAG: Self-Correcting Retrieval Across Pinecone + Milvus
+# Agentic RAG: Self-Correcting Retrieval Across Pinecone + Milvus
 
+An **Agentic Retrieval-Augmented Generation (RAG)** system built with **LangGraph**. Unlike a standard RAG pipeline (retrieve once → generate), this system performs iterative, self-correcting retrieval to improve answer quality.
 
+The agent:
 
-An agentic Retrieval-Augmented Generation system built with \*\*LangGraph\*\*. Unlike
+1. **Retrieves in parallel** from two vector databases (Pinecone + Milvus).
+2. **Grades retrieved documents** for relevance using an LLM as a judge.
+3. **Rewrites the search query** and retries retrieval if the retrieved context is insufficient.
+4. **Generates a grounded answer** only after collecting enough relevant context, or honestly reports that it could not find sufficient evidence after the maximum number of retries.
 
-a standard RAG pipeline (retrieve once → generate), this agent:
+This pattern is known as **Corrective RAG (CRAG)**, an increasingly common architecture for building self-correcting retrieval systems.
 
+---
 
+## Architecture
 
-1\. \*\*Retrieves in parallel\*\* from two vector databases (Pinecone + Milvus)
+```text
+                    ┌─────────────┐
+Question ─────────► │  Retrieve   │
+                    │ Pinecone +  │
+                    │   Milvus    │
+                    └──────┬──────┘
+                           │
+                           ▼
+                    ┌─────────────┐
+                    │    Grade    │
+                    │ LLM judges  │
+                    │ relevance   │
+                    └──────┬──────┘
+                           │
+                 Enough relevant docs?
+                    │             │
+                  Yes            No
+                    │      (Retries left?)
+                    │             │
+                    ▼             ▼
+             ┌────────────┐ ┌──────────────┐
+             │  Generate  │ │ Rewrite Query│
+             └──────┬─────┘ └──────┬───────┘
+                    │              │
+                    └──────────────┘
+                           ▲
+                           │
+                      Retry Retrieval
 
-2\. \*\*Grades its own retrieved documents\*\* for relevance using an LLM judge
+                           ▼
+        Final answer with source citations
+        or "Insufficient evidence" after
+               maximum retries.
+```
 
-3\. \*\*Rewrites the search query\*\* and retries if the context isn't good enough
+---
 
-4\. \*\*Generates a grounded answer\*\* only once it has sufficient relevant context,
+## Project Structure
 
-&#x20;  or honestly says it couldn't find an answer after max retries
-
-
-
-This pattern is called \*\*Corrective RAG (CRAG)\*\* — worth knowing that name, it's
-
-the standard industry term for this kind of self-correcting retrieval loop.
-
-
-
-\## Architecture
-
-&#x20;       ┌─────────────┐
-
-
-
-question ────────► │ retrieve │ (Pinecone + Milvus, parallel, merged)
-
-└──────┬──────┘
-
-▼
-
-┌─────────────┐
-
-│ grade │ LLM judges each doc: relevant? yes/no
-
-└──────┬──────┘
-
-▼
-
-enough relevant docs?
-
-│ │
-
-yes no (and retries left)
-
-│ │
-
-▼ ▼
-
-┌────────────┐ ┌──────────────┐
-
-│ generate │ │ rewrite\_query│──► loop back to retrieve
-
-└────────────┘ └──────────────┘
-
-│
-
-▼
-
-answer (with source citations, or an honest
-
-"insufficient evidence" response after max retries)
-
-\## Project layout
-
-
-
+```text
 agentic-rag/
-
 ├── src/
-
-│ ├── config.py # env vars / settings
-
-│ ├── vector\_stores.py # Pinecone + Milvus retriever wrappers
-
-│ ├── ingestion.py # load PDFs -> chunk -> embed -> upsert to both DBs
-
-│ ├── graph\_state.py # LangGraph state schema
-
-│ ├── graph\_nodes.py # retrieve / grade / rewrite / generate node functions
-
-│ ├── graph.py # wires nodes into the LangGraph StateGraph
-
-│ ├── naive\_graph.py # baseline (no grading/rewrite) for comparison
-
-│ ├── evaluate.py # runs corrective vs naive on 10 test questions
-
-│ ├── app.py # CLI entrypoint
-
-│ └── streamlit\_app.py # live demo UI showing the agent's trace
-
-├── EVALUATION.md # methodology, results, and honest caveats
-
+│   ├── config.py             # Environment variables and configuration
+│   ├── vector_stores.py      # Pinecone & Milvus retriever wrappers
+│   ├── ingestion.py          # Load PDFs → chunk → embed → upsert
+│   ├── graph_state.py        # LangGraph state schema
+│   ├── graph_nodes.py        # Retrieve, grade, rewrite, generate nodes
+│   ├── graph.py              # LangGraph workflow definition
+│   ├── naive_graph.py        # Baseline RAG (no grading or rewriting)
+│   ├── evaluate.py           # Compare corrective vs. naive RAG
+│   ├── app.py                # CLI application
+│   └── streamlit_app.py      # Interactive visualization UI
+├── EVALUATION.md             # Methodology and benchmark results
 ├── requirements.txt
-
 ├── .env.example
-
 └── README.md
-
-
-
-
-
-\## Setup
-
-
-
-1\. \*\*Install dependencies\*\*
-
-```bash
-
-&#x20;  pip install -r requirements.txt
-
 ```
 
+---
 
+## Setup
 
-2\. \*\*Get accounts\*\*
-
-&#x20;  - Pinecone: https://www.pinecone.io (free tier)
-
-&#x20;  - Milvus: https://cloud.zilliz.com (Zilliz Cloud free tier, managed Milvus)
-
-&#x20;  - Local LLM via \[Ollama](https://ollama.com) (free), or swap in OpenAI's API
-
-
-
-3\. \*\*Copy `.env.example` to `.env` and fill in your keys\*\*
+### 1. Install dependencies
 
 ```bash
-
-&#x20;  cp .env.example .env
-
+pip install -r requirements.txt
 ```
 
+### 2. Create required accounts
 
+- **Pinecone** (Free Tier)
+- **Zilliz Cloud (Managed Milvus)** (Free Tier)
+- **Ollama** for running a local LLM (recommended), or configure the OpenAI API instead.
 
-4\. \*\*Ingest documents into both vector stores\*\*
+### 3. Configure environment variables
+
+Copy the example configuration file:
 
 ```bash
-
-&#x20;  python -m src.ingestion --pdf path/to/your.pdf
-
+cp .env.example .env
 ```
 
+Then populate the required API keys and configuration values.
 
-
-5\. \*\*Ask questions (CLI)\*\*
+### 4. Ingest your documents
 
 ```bash
-
-&#x20;  python -m src.app "What were the key risks mentioned in the report?"
-
+python -m src.ingestion --pdf path/to/your.pdf
 ```
 
+This will:
 
+- Load the PDF
+- Split it into chunks
+- Generate embeddings
+- Store them in both Pinecone and Milvus
 
-6\. \*\*Or run the live demo UI\*\*
+### 5. Ask questions from the CLI
 
 ```bash
-
-&#x20;  streamlit run src/streamlit\_app.py
-
+python -m src.app "What were the key risks mentioned in the report?"
 ```
 
-&#x20;  Shows the whole agent trace step by step — each retrieval, the documents
-
-&#x20;  that passed/failed grading, and any query rewrites — before showing the
-
-&#x20;  final grounded answer with its sources.
-
-
-
-7\. \*\*Run the evaluation\*\* (self-correcting vs. naive baseline)
+### 6. Launch the Streamlit interface
 
 ```bash
-
-&#x20;  python -m src.evaluate
-
+streamlit run src/streamlit_app.py
 ```
 
-&#x20;  See `EVALUATION.md` for full methodology and results.
+The UI visualizes the complete execution trace, including:
 
+- Retrieval from both vector databases
+- LLM relevance grading
+- Query rewrites (if needed)
+- Final grounded answer with source citations
 
+### 7. Run the evaluation
 
-\## Why this is more than the "basic agentic RAG" tutorial version
+```bash
+python -m src.evaluate
+```
 
+See **EVALUATION.md** for the evaluation methodology, benchmark setup, and comparative results.
 
+---
 
-\- \*\*Grading is a real LLM call\*\*, not a heuristic — you can show the actual
+## Why This Project Goes Beyond a Basic Agentic RAG Tutorial
 
-&#x20; grading prompt.
+Unlike many introductory RAG examples, this project implements several production-oriented capabilities:
 
-\- \*\*The retry loop is a genuine cycle in the graph\*\* (LangGraph conditional
+- **LLM-based document grading** rather than simple similarity score filtering.
+- **A true corrective retrieval loop** implemented with LangGraph conditional edges, allowing the agent to retry retrieval after rewriting the query.
+- **Graceful failure handling**, returning an "Insufficient evidence" response instead of hallucinating when no adequate context is found.
+- **Parallel retrieval** from two independently configured vector databases (Pinecone and Milvus), simulating a realistic enterprise retrieval architecture.
+- **Quantitative evaluation** against a naive single-pass RAG baseline, with documented methodology and results in `EVALUATION.md`.
 
-&#x20; edges), capped at `MAX\_RETRIES`, with a graceful "insufficient evidence"
+---
 
-&#x20; fallback instead of hallucinating.
+## Tech Stack
 
-\- \*\*Two independently-configured vector backends\*\* are queried and merged in
+- **LangGraph**
+- **LangChain**
+- **Pinecone**
+- **Milvus (Zilliz Cloud)**
+- **Ollama / OpenAI**
+- **Streamlit**
+- **Python 3.11+**
 
-&#x20; parallel — a realistic enterprise scenario.
+---
 
-\- \*\*Backed by a real evaluation\*\* against a naive baseline, not just a demo
+## License
 
-&#x20; that happens to work (see `EVALUATION.md`).
-
-
-
-
-
-
-
+MIT License
